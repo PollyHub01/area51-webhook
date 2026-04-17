@@ -2,11 +2,6 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLat
 const fetch = require('node-fetch');
 const qrcode = require('qrcode');
 const express = require('express');
-const fs = require('fs');
-if (fs.existsSync('auth')) {
-  fs.rmSync('auth', { recursive: true, force: true });
-  console.log('🔄 Auth resetada!');
-}
 const app = express();
 const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
 const GROUP_ID = '[557399279727-1569545528](557399279727-1569545528)@g.us';
