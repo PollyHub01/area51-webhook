@@ -1,16 +1,21 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const fetch = require('node-fetch');
+const qrcode = require('qrcode-terminal');
 
 const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
 const GROUP_ID = '[557399279727-1569545528](557399279727-1569545528)@g.us';
 
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState('auth');
-  const sock = makeWASocket({ auth: state, printQRInTerminal: true });
+  const sock = makeWASocket({ auth: state });
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+  sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
+    if (qr) {
+      console.log('📱 Escaneie o QR Code abaixo com o WhatsApp:');
+      qrcode.generate(qr, { small: true });
+    }
     if (connection === 'close') {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       if (shouldReconnect) connectToWhatsApp();
