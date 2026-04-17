@@ -1,40 +1,46 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const fetch = require('node-fetch');
 const qrcode = require('qrcode-terminal');
 
 const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
 const GROUP_ID = '[557399279727-1569545528](557399279727-1569545528)@g.us';
 
+const randomDelay = () => new Promise(r => setTimeout(r, Math.floor(Math.random() * 30000) + 15000));
+
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState('auth');
-  
-  const sock = makeWASocket({ 
+  const { version } = await fetchLatestBaileysVersion();
+
+  const sock = makeWASocket({
+    version,
     auth: state,
-    browser: ['Area51 Bot', 'Chrome', '1.0.0'],
+    browser: ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36', 'Chrome', '122.0.0'],
     connectTimeoutMs: 60000,
-    retryRequestDelayMs: 2000,
-    maxRetries: 3
+    retryRequestDelayMs: randomDelay,
+    maxRetries: 5,
+    generateHighQualityLinkPreview: false,
+    syncFullHistory: false
   });
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      console.log('\n📱 ESCANEIE O QR CODE ABAIXO:\n');
+      console.log('\n📱 ESCANEIE O QR CODE:\n');
       qrcode.generate(qr, { small: true });
-      console.log('\nAbra o WhatsApp → Aparelhos conectados → Conectar aparelho\n');
     }
 
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
       console.log('Conexão fechada, código:', code);
       if (code !== DisconnectReason.loggedOut) {
-        setTimeout(connectToWhatsApp, 5000);
+        await randomDelay();
+        connectToWhatsApp();
       }
     }
 
     if (connection === 'open') {
-      console.log('✅ WhatsApp conectado com sucesso!');
+      console.log('✅ WhatsApp conectado!');
     }
   });
 
@@ -54,7 +60,7 @@ async function connectToWhatsApp() {
         timestamp: new Date().toISOString()
       };
 
-      console.log('Nova mensagem detectada:', payload.message);
+      await randomDelay();
 
       try {
         await fetch(MAKE_WEBHOOK_URL, {
@@ -64,7 +70,7 @@ async function connectToWhatsApp() {
         });
         console.log('✅ Enviado pro Make!');
       } catch (err) {
-        console.error('Erro ao enviar pro Make:', err.message);
+        console.error('Erro:', err.message);
       }
     }
   });
