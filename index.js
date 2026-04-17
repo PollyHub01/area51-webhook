@@ -1,41 +1,47 @@
-const express = require('express');
-const app = express();
-app.use(express.json());
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const fetch = require('node-fetch');
 
 const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
 const GROUP_ID = '[557399279727-1569545528](557399279727-1569545528)@g.us';
 
-app.post('/webhook', async (req, res) => {
-  try {
-    const data = req.body;
-    if (!data || data.Jid !== GROUP_ID) return res.sendStatus(200);
-    if (data.Info?.IsFromMe) return res.sendStatus(200);
+async function connectToWhatsApp() {
+  const { state, saveCreds } = await useMultiFileAuthState('auth');
+  const sock = makeWASocket({ auth: state, printQRInTerminal: true });
 
-    const payload = {
-      event: 'message',
-      group: 'Compromissos Área51',
-      group_id: data.Jid,
-      from: data.Info?.Sender || '',
-      message: data.Message?.Conversation || data.Message?.ExtendedTextMessage?.Text || '',
-      has_image: !!data.Message?.ImageMessage,
-      message_id: data.Info?.ID || '',
-      timestamp: new Date().toISOString()
-    };
+  sock.ev.on('creds.update', saveCreds);
 
-    await fetch(MAKE_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+    if (connection === 'close') {
+      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      if (shouldReconnect) connectToWhatsApp();
+    } else if (connection === 'open') {
+      console.log('✅ WhatsApp conectado!');
+    }
+  });
 
-    res.sendStatus(200);
-  } catch (err) {
-    console.error(err);
-    res.sendStatus(500);
-  }
-});
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    for (const msg of messages) {
+      if (msg.key.remoteJid !== GROUP_ID) continue;
+      if (msg.key.fromMe) continue;
 
-app.get('/', (req, res) => res.send('Area51 Webhook rodando!'));
+      const payload = {
+        event: 'message',
+        group: 'Compromissos Área51',
+        group_id: GROUP_ID,
+        from: msg.key.participant || '',
+        message: msg.message?.conversation || msg.message?.extendedTextMessage?.text || '',
+        has_image: !!msg.message?.imageMessage,
+        message_id: msg.key.id || '',
+        timestamp: new Date().toISOString()
+      };
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+      await fetch(MAKE_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
+  });
+}
+
+connectToWhatsApp();
