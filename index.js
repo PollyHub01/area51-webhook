@@ -1,11 +1,33 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const fetch = require('node-fetch');
-const qrcode = require('qrcode-terminal');
+const qrcode = require('qrcode');
+const express = require('express');
 
+const app = express();
 const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
 const GROUP_ID = '[557399279727-1569545528](557399279727-1569545528)@g.us';
 
-const randomDelay = () => new Promise(r => setTimeout(r, Math.floor(Math.random() * 30000) + 15000));
+let currentQR = null;
+
+app.get('/', (req, res) => {
+  if (currentQR) {
+    res.send(`
+      <html>
+        <body style="display:flex;justify-content:center;align-items:center;height:100vh;flex-direction:column">
+          <h2>📱 Escaneie com o WhatsApp</h2>
+          <img src="${currentQR}" style="width:300px;height:300px"/>
+          <p>WhatsApp → Aparelhos conectados → Conectar aparelho</p>
+          <p><small>Atualize a página se o QR expirar</small></p>
+        </body>
+      </html>
+    `);
+  } else {
+    res.send('<h2>✅ WhatsApp já conectado!</h2>');
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
 
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState('auth');
@@ -14,11 +36,8 @@ async function connectToWhatsApp() {
   const sock = makeWASocket({
     version,
     auth: state,
-    browser: ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36', 'Chrome', '122.0.0'],
+    browser: ['Chrome', 'Chrome', '122.0.0'],
     connectTimeoutMs: 60000,
-    retryRequestDelayMs: randomDelay,
-    maxRetries: 5,
-    generateHighQualityLinkPreview: false,
     syncFullHistory: false
   });
 
@@ -26,20 +45,19 @@ async function connectToWhatsApp() {
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      console.log('\n📱 ESCANEIE O QR CODE:\n');
-      qrcode.generate(qr, { small: true });
+      currentQR = await qrcode.toDataURL(qr);
+      console.log('📱 QR Code disponível em: [https://area51-webhook-production.up.railway.app](https://area51-webhook-production.up.railway.app)');
     }
 
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
-      console.log('Conexão fechada, código:', code);
       if (code !== DisconnectReason.loggedOut) {
-        await randomDelay();
-        connectToWhatsApp();
+        setTimeout(connectToWhatsApp, 5000);
       }
     }
 
     if (connection === 'open') {
+      currentQR = null;
       console.log('✅ WhatsApp conectado!');
     }
   });
@@ -59,8 +77,6 @@ async function connectToWhatsApp() {
         message_id: msg.key.id || '',
         timestamp: new Date().toISOString()
       };
-
-      await randomDelay();
 
       try {
         await fetch(MAKE_WEBHOOK_URL, {
